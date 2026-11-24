@@ -1,5 +1,6 @@
 #include "fp_serial.h"
 #include "driver/uart.h"
+#include "freertos/FreeRTOS.h"
 
 static bool To_Data_Bits(int Num_Data_Bits, uart_word_length_t &Result);
 static bool To_Stop_Bits(int Num_Stop_Bits, uart_stop_bits_t &Result);
@@ -75,8 +76,41 @@ static bool To_Stop_Bits(int Num_Stop_Bits, uart_stop_bits_t &Result)
     }
 }
 
-int fp_serial_TX(const uint8_t *Data, size_t Length){
+int fp_serial_TX(const uint8_t *Data, uint32_t Length){
     if (s_port < 0) return FP_SERIAL_ERR_NOT_OPEN; // порт не открыт
-    // Реализация отправки данных через UART
+    if (Data == nullptr || Length == 0) return FP_SERIAL_ERR_ARG; // неверный аргумент
+    int bytes_written = uart_write_bytes(static_cast<uart_port_t>(s_port), Data, Length);
+    if(bytes_written < 0){
+        return FP_SERIAL_ERR_DRIVER;
+    }
+    if(uart_wait_tx_done(static_cast<uart_port_t>(s_port), pdMS_TO_TICKS(100)) != ESP_OK){
+        return FP_SERIAL_ERR_TX_TIMEOUT;
+    }
+
+    return bytes_written;
+}
+
+int fp_serial_RX(uint8_t *Data, uint32_t Length, uint32_t Timeout){
+    if (s_port < 0) return FP_SERIAL_ERR_NOT_OPEN; // порт не открыт
+    if (Data == nullptr || Length == 0) return FP_SERIAL_ERR_ARG; // неверный аргумент
+    int bytes_read = uart_read_bytes(static_cast<uart_port_t>(s_port), Data, Length, pdMS_TO_TICKS(Timeout));
+    if(bytes_read < 0) return FP_SERIAL_ERR_DRIVER;
+    return bytes_read;
+}
+
+int fp_serial_reset_buffer(void){
+    if (s_port < 0) return FP_SERIAL_ERR_NOT_OPEN; // порт не открыт
+    
+    if(uart_flush_input(static_cast<uart_port_t>(s_port)) != ESP_OK){
+        return FP_SERIAL_ERR_DRIVER;
+    }
+
+    return 0;
+}
+
+int fp_serial_speed(uint32_t Baudrate_Prot){
+    if (s_port < 0) return FP_SERIAL_ERR_NOT_OPEN; // порт не открыт
+    if (Baudrate_Prot <= 0) return FP_SERIAL_ERR_ARG; // неверный аргумент
+    if (uart_set_baudrate(static_cast<uart_port_t>(s_port), Baudrate_Prot) != ESP_OK) { return FP_SERIAL_ERR_DRIVER;}
     return 0;
 }
